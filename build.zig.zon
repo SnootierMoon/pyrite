@@ -1,0 +1,27 @@
+.{
+    .name = "pyrite",
+    .version = "0.0.0",
+
+    .dependencies = .{
+        .glfw = .{
+            .url = "https://github.com/glfw/glfw/archive/refs/tags/3.4.tar.gz",
+            .hash = "1220c46ebcac607065f942193b82a21b87213fca4b0d50c83461f8f5e22955fcb88f",
+        },
+        .nuklear = .{
+            .url = "https://github.com/Immediate-Mode-UI/Nuklear/archive/refs/tags/4.12.0.tar.gz",
+            .hash = "122014a93ba5bd3eba2002a1e8c74c14ffbede810ba9c88603d1d417374e7825dbbb",
+        },
+        .glad = .{
+            .url = "https://github.com/Dav1dde/glad/archive/refs/tags/v2.0.6.tar.gz",
+            .hash = "1220b865ae249d23ec1696bc933a63fe1849556d9a2b2c889f6c44f76fb5e0f68427",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "LICENSE",
+        "README.md",
+    },
+}

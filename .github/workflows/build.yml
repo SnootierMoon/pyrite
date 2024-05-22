@@ -1,0 +1,43 @@
+name: build
+
+on:
+  push:
+    branches: [ 'main' ]
+  pull_request:
+    branches: [ 'main' ]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          - triple: x86_64-windows-gnu
+            os: windows-latest
+          - triple: x86_64-macos-none
+            os: macos-latest
+          - triple: x86_64-linux-gnu
+            os: ubuntu-latest
+      
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          packages: libwayland-dev libxkbcommon-dev xorg-dev
+          version: '1.0'
+      - uses: actions/setup-python@v5 
+        with:
+          python-version: '3.10'
+      - uses: goto-bus-stop/setup-zig@v2
+      - name: Zig Build
+        run: zig build --summary all
+      - id: gen-artifact-name
+        run: echo "name=pyrite-$(git rev-parse --short HEAD)-${{ matrix.triple }}" >> "$GITHUB_OUTPUT"
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.gen-artifact-name.outputs.name }}
+          path: zig-out/bin/
