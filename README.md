@@ -17,7 +17,7 @@ design ideas.
  - voxel art file format [**(T1)** MVP]
    - **(T2)** data specification: palette, voxels
    - **(T4)** optimization for space
-   - **(T4)** expressitivity, convert from other formats
+   - **(T4)** expressivity, convert from other formats
  - remote access [**(T1)** MVP]
    - **(T2)** objects loaded in client can be marked for remote storage
  - drag & drop / file explorer **(T2)**

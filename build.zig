@@ -176,9 +176,16 @@ const CDeps = struct {
             .optimize = o.optimize,
             .link_libc = true,
         });
-        nk_lib.addIncludePath(nk_dep.path("."));
-        nk_lib.addCSourceFile(.{ .file = b.path("src/nuklear.c") });
-        nk_lib.installHeader(nk_dep.path("nuklear.h"), "nuklear.h");
+        const nk_files = b.addWriteFiles();
+        const nk_headers = std.Build.LazyPath{ .generated = .{
+            .file = &nk_files.generated_directory,
+            .sub_path = "include",
+        } };
+        _ = nk_files.addCopyFile(b.path("src/nk.h"), "include/nk.h");
+        _ = nk_files.addCopyFile(nk_dep.path("nuklear.h"), "include/nuklear.h");
+        nk_lib.addCSourceFile(.{ .file = nk_files.add("src/nk.c", "#define NK_IMPLEMENTATION\n#include \"nk.h\"") });
+        nk_lib.addIncludePath(nk_headers);
+        nk_lib.installHeadersDirectory(nk_headers, ".", .{});
 
         const cdeps = CDeps{
             .b = b,

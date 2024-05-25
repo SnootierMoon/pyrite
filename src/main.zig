@@ -7,13 +7,7 @@ pub const c = @cImport({
 
     @cInclude("glad/gl.h");
 
-    @cDefine("NK_ASSERT", "zig_nk_assert");
-    @cDefine("NK_INCLUDE_DEFAULT_FONT", "");
-    @cDefine("NK_INCLUDE_FIXED_TYPES", "");
-    @cDefine("NK_INCLUDE_FONT_BAKING", "");
-    @cDefine("NK_INCLUDE_STANDARD_BOOL", "");
-    @cDefine("NK_INCLUDE_VERTEX_BUFFER_OUTPUT", "");
-    @cInclude("nuklear.h");
+    @cInclude("nk.h");
 });
 
 const Camera = @import("Camera.zig");
@@ -751,6 +745,49 @@ pub const Platform = struct {
 
 export fn zig_nk_assert(x: c_int) callconv(.C) void {
     std.debug.assert(x != 0);
+}
+
+export fn zig_nk_strtod(_start: [*:0]const u8, endptr: ?*[*:0]const u8) callconv(.C) f64 {
+    // read ( )+[+-]?([0-9]+\.[0-9]*|\.[0-9]+)?([eE][+-]?)[0-9]+
+    var start = _start;
+    while (start[0] == ' ') start += 1;
+    var len: usize = 0;
+    if (start[len] == '+' or start[len] == '-') {
+        len += 1;
+    }
+    var state: enum { int, dec, exp } = .int;
+    if (std.ascii.isDigit(start[len])) {
+        len += 1;
+    } else if (start[len] == '.' and std.ascii.isDigit(start[len + 1])) {
+        state = .dec;
+        len += 2;
+    } else {
+        return 0.0;
+    }
+    while (true) : (len += 1) {
+        if (state == .int and start[len] == '.') {
+            state = .dec;
+        } else if (state == .dec and (start[len] == 'e' or start[len] == 'E') and
+            (std.ascii.isDigit(start[len + 1]) or
+            (start[len + 1] == '+' or start[len + 1] == '-') and std.ascii.isDigit(start[len + 2])))
+        {
+            state = .exp;
+        } else if (!std.ascii.isDigit(start[len])) {
+            break;
+        }
+    }
+    if (endptr) |eptr| {
+        eptr.* = start + len;
+    }
+    return std.fmt.parseFloat(f64, start[0..len]) catch unreachable;
+}
+
+export fn zig_nk_dtoa(_s: ?[*:0]u8, n: f64) ?[*:0]u8 {
+    if (_s) |s| {
+        const buf = s[0..c.NK_MAX_NUMBER_BUFFER];
+        _ = std.fmt.bufPrintZ(buf, "{d:.2}", .{n}) catch unreachable;
+    }
+    return _s;
 }
 
 pub fn main() !void {
