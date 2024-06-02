@@ -12,9 +12,11 @@ pub const c = @cImport({
 
 const Camera = @import("Camera.zig");
 const ChunkCoord = @import("voxel/coord.zig").ChunkCoord;
+const Dir = @import("voxel/coord.zig").Dir;
 const Object = @import("voxel/Object.zig");
-const lm = @import("linmath.zig");
 const Sphere = @import("voxel/Sphere.zig");
+const Voxel = @import("voxel.zig").Voxel;
+const lm = @import("linmath.zig");
 
 const NkVertex = extern struct {
     position: [2]f32,
@@ -22,6 +24,7 @@ const NkVertex = extern struct {
     col: [4]u8,
 };
 
+var value: f32 = 0.5;
 pub const Platform = struct {
     allocator: std.mem.Allocator,
 
@@ -143,7 +146,7 @@ pub const Platform = struct {
         const sphere = Sphere{ .radius = 15.0, .center = lm.vec3d.zero };
         var sphere_it = sphere.iterator();
         while (sphere_it.next()) |posn| {
-            (try platform.object.getPtr(allocator, posn)).* = 1;
+            (try platform.object.getPtr(allocator, posn)).* = @enumFromInt(1);
         }
 
         platform.meshes = .{};
@@ -258,19 +261,42 @@ pub const Platform = struct {
 
     pub fn run(platform: *Platform) !void {
         while (c.glfwWindowShouldClose(platform.window) == c.GLFW_FALSE) {
-            platform.events();
-            platform.draw();
+            try platform.events();
+            try platform.draw();
 
             c.nk_clear(&platform.nk_ctx);
         }
     }
 
-    fn events(platform: *Platform) void {
+    fn events(platform: *Platform) !void {
         c.nk_input_begin(&platform.nk_ctx);
         c.glfwPollEvents();
         c.nk_input_end(&platform.nk_ctx);
 
         if (c.nk_begin(&platform.nk_ctx, "Show", c.nk_rect(50, 50, 220, 220), c.NK_WINDOW_BORDER | c.NK_WINDOW_MOVABLE | c.NK_WINDOW_CLOSABLE)) {
+            c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
+            {
+                const msg = if (platform.object.rayMarchNonAir(platform.camera.pos, platform.camera.forward(), 50)) |hit|
+                    try std.fmt.allocPrintZ(platform.allocator, "Looking at: {},{},{}", .{ hit.vec[0], hit.vec[1], hit.vec[2] })
+                else
+                    try std.fmt.allocPrintZ(platform.allocator, "Looking at: None", .{});
+                defer platform.allocator.free(msg);
+                c.nk_label(&platform.nk_ctx, msg, c.NK_TEXT_LEFT);
+            }
+            c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
+            {
+                const msg = try std.fmt.allocPrintZ(platform.allocator, "Facing: {s}", .{switch (Dir.fromVec(platform.camera.forward()) orelse unreachable) {
+                    .pos_x => "positive x",
+                    .pos_y => "positive y",
+                    .pos_z => "positive z",
+                    .neg_x => "negative x",
+                    .neg_y => "negative y",
+                    .neg_z => "negative z",
+                }});
+                defer platform.allocator.free(msg);
+                c.nk_label(&platform.nk_ctx, msg, c.NK_TEXT_LEFT);
+            }
+
             c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
             c.nk_property_float(&platform.nk_ctx, "distance", 0, &platform.nk_state_range, 50, 1, 0.3);
 
@@ -312,7 +338,7 @@ pub const Platform = struct {
         }
     }
 
-    fn draw(platform: *Platform) void {
+    fn draw(platform: *Platform) !void {
         c.glClearColor(0, 0, 0, 255);
         c.glClear(c.GL_DEPTH_BUFFER_BIT | c.GL_COLOR_BUFFER_BIT);
 
@@ -407,9 +433,7 @@ pub const Platform = struct {
         var buffer = std.ArrayList(u32).init(allocator);
         defer buffer.deinit();
 
-        if (platform.object.chunks.get(chunk_coord)) |chunk| {
-            try chunk.generateMesh(&buffer);
-
+        if (try platform.object.generateMesh(chunk_coord, &buffer)) {
             var vao: c.GLuint = undefined;
             var vbo: c.GLuint = undefined;
 
@@ -569,7 +593,7 @@ pub const Platform = struct {
                         const sphere = Sphere{ .radius = platform.nk_state_radius, .center = hit.center() };
                         var sphere_it = sphere.iterator();
                         while (sphere_it.next()) |posn| {
-                            (platform.object.getPtr(platform.allocator, posn) catch @panic("")).* = @intCast(platform.nk_state_selected);
+                            (platform.object.getPtr(platform.allocator, posn) catch @panic("")).* = @enumFromInt(@as(u32, @intCast(platform.nk_state_selected)));
                         }
                         var it = platform.object.chunks.keyIterator();
                         while (it.next()) |chunk_coord| {
