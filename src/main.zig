@@ -63,10 +63,6 @@ pub const Platform = struct {
     nk_ebuffer: c.nk_buffer,
     nk_cmd_buffer: c.nk_buffer,
 
-    nk_state_radius: f32,
-    nk_state_range: f32,
-    nk_state_selected: c_int,
-
     const Mesh = struct {
         vao: c.GLuint,
         vbo: c.GLuint,
@@ -229,10 +225,6 @@ pub const Platform = struct {
 
         _ = c.nk_init(&platform.nk_ctx, &platform.nk_alloc, &font.handle);
 
-        platform.nk_state_radius = 5.0;
-        platform.nk_state_range = 25.0;
-        platform.nk_state_selected = 0;
-
         return platform;
     }
 
@@ -273,40 +265,7 @@ pub const Platform = struct {
         c.glfwPollEvents();
         c.nk_input_end(&platform.nk_ctx);
 
-        if (c.nk_begin(&platform.nk_ctx, "Show", c.nk_rect(50, 50, 220, 220), c.NK_WINDOW_BORDER | c.NK_WINDOW_MOVABLE | c.NK_WINDOW_CLOSABLE)) {
-            c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
-            {
-                const msg = if (platform.object.rayMarchNonAir(platform.camera.pos, platform.camera.forward(), 50)) |hit|
-                    try std.fmt.allocPrintZ(platform.allocator, "Looking at: {},{},{}", .{ hit.vec[0], hit.vec[1], hit.vec[2] })
-                else
-                    try std.fmt.allocPrintZ(platform.allocator, "Looking at: None", .{});
-                defer platform.allocator.free(msg);
-                c.nk_label(&platform.nk_ctx, msg, c.NK_TEXT_LEFT);
-            }
-            c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
-            {
-                const msg = try std.fmt.allocPrintZ(platform.allocator, "Facing: {s}", .{switch (Dir.fromVec(platform.camera.forward()) orelse unreachable) {
-                    .pos_x => "positive x",
-                    .pos_y => "positive y",
-                    .pos_z => "positive z",
-                    .neg_x => "negative x",
-                    .neg_y => "negative y",
-                    .neg_z => "negative z",
-                }});
-                defer platform.allocator.free(msg);
-                c.nk_label(&platform.nk_ctx, msg, c.NK_TEXT_LEFT);
-            }
-
-            c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
-            c.nk_property_float(&platform.nk_ctx, "distance", 0, &platform.nk_state_range, 50, 1, 0.3);
-
-            c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
-            c.nk_property_float(&platform.nk_ctx, "radius", 0, &platform.nk_state_radius, 10, 1, 0.3);
-
-            c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
-            var items = [2]?[*:0]const u8{ "air", "block" };
-            c.nk_combobox(&platform.nk_ctx, &items, 2, &platform.nk_state_selected, 30, c.nk_vec2(100, 60));
-        }
+        if (c.nk_begin(&platform.nk_ctx, "Show", c.nk_rect(50, 50, 220, 220), c.NK_WINDOW_BORDER | c.NK_WINDOW_MOVABLE | c.NK_WINDOW_CLOSABLE)) {}
         c.nk_end(&platform.nk_ctx);
 
         switch (platform.input_mode) {
@@ -589,11 +548,11 @@ pub const Platform = struct {
             },
             .camera_input => {
                 if (button == c.GLFW_MOUSE_BUTTON_LEFT and action == c.GLFW_PRESS) {
-                    if (platform.object.rayMarchNonAir(platform.camera.pos, platform.camera.forward(), platform.nk_state_range)) |hit| {
-                        const sphere = Sphere{ .radius = platform.nk_state_radius, .center = hit.center() };
+                    if (platform.object.rayMarchNonAir(platform.camera.pos, platform.camera.forward(), 25.0)) |hit| {
+                        const sphere = Sphere{ .radius = 5.0, .center = hit.center() };
                         var sphere_it = sphere.iterator();
                         while (sphere_it.next()) |posn| {
-                            (platform.object.getPtr(platform.allocator, posn) catch @panic("")).* = @enumFromInt(@as(u32, @intCast(platform.nk_state_selected)));
+                            (platform.object.getPtr(platform.allocator, posn) catch @panic("")).* = @enumFromInt(@as(u32, @intCast(0)));
                         }
                         var it = platform.object.chunks.keyIterator();
                         while (it.next()) |chunk_coord| {

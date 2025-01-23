@@ -126,8 +126,8 @@ pub fn vec(comptime N: comptime_int, comptime T: type) type {
         };
 
         pub usingnamespace switch (@typeInfo(T)) {
-            .Int => struct {},
-            .Float => struct {},
+            .int => struct {},
+            .float => struct {},
             else => unreachable,
         };
     };
@@ -204,8 +204,8 @@ pub fn mat(comptime N: comptime_int, comptime T: type) type {
         };
 
         pub usingnamespace switch (@typeInfo(T)) {
-            .Int => struct {},
-            .Float => struct {},
+            .int => struct {},
+            .float => struct {},
             else => unreachable,
         };
     };

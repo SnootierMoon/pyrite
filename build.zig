@@ -98,14 +98,14 @@ const CDeps = struct {
                 lib.installHeadersDirectory(dep.path("include"), ".", .{});
                 switch (o.target.result.os.tag) {
                     .windows => {
-                        lib.defineCMacro("_GLFW_WIN32", null);
+                        lib.root_module.addCMacro("_GLFW_WIN32", "");
                         lib.addCSourceFiles(.{
                             .root = dep.path("src"),
                             .files = &glfw_srcs_win32,
                         });
                     },
                     .macos => {
-                        lib.defineCMacro("_GLFW_COCOA", null);
+                        lib.root_module.addCMacro("_GLFW_COCOA", "");
                         lib.addCSourceFiles(.{
                             .root = dep.path("src"),
                             .files = &glfw_srcs_cocoa,
@@ -123,14 +123,14 @@ const CDeps = struct {
                         if (o.wayland) {
                             generateWaylandProtocols(b, dep, lib);
 
-                            lib.defineCMacro("_GLFW_WAYLAND", null);
+                            lib.root_module.addCMacro("_GLFW_WAYLAND", "");
                             lib.addCSourceFiles(.{
                                 .root = dep.path("src"),
                                 .files = &glfw_srcs_wayland,
                             });
                         }
                         if (o.x11) {
-                            lib.defineCMacro("_GLFW_X11", null);
+                            lib.root_module.addCMacro("_GLFW_X11", "");
                             lib.addCSourceFiles(.{
                                 .root = dep.path("src"),
                                 .files = &glfw_srcs_x11,
