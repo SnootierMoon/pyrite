@@ -21,6 +21,8 @@ const Sphere = @import("voxel/Sphere.zig");
 const Voxel = @import("voxel.zig").Voxel;
 const lm = @import("linmath.zig");
 
+var f: *ui.Font = undefined;
+
 const NkVertex = extern struct {
     position: [2]f32,
     uv: [2]f32,
@@ -50,9 +52,10 @@ pub const Platform = struct {
     crosshair_prog: c.GLuint,
     crosshair_prog_frame_size: c.GLint,
 
+    atlas: *ui.FontAtlas,
+
     nk_alloc: c.nk_allocator,
     nk_ctx: c.nk_context,
-    nk_atlas: c.nk_font_atlas,
     nk_tex_null: c.nk_draw_null_texture,
     nk_font_tex: c.GLuint,
 
@@ -214,30 +217,14 @@ pub const Platform = struct {
         c.glVertexAttribPointer(1, 2, c.GL_FLOAT, c.GL_FALSE, @sizeOf(NkVertex), @ptrFromInt(@offsetOf(NkVertex, "uv")));
         c.glVertexAttribPointer(2, 4, c.GL_UNSIGNED_BYTE, c.GL_TRUE, @sizeOf(NkVertex), @ptrFromInt(@offsetOf(NkVertex, "col")));
 
-        var atlas: ui.FontAtlas = .init();
-        defer atlas.deinit(allocator);
-        _ = try atlas.addTTF(allocator, .{
+        platform.atlas = try .init(allocator);
+        errdefer platform.atlas.deinit(platform.allocator);
+        f = try platform.atlas.addTTF(allocator, .{
             .ttf = @embedFile("yeet.ttf"),
             .height = 13,
         });
-        const result = try atlas.bake(allocator, .r8g8b8a8_unorm);
-
-        std.log.info("mine {} {}", .{ result.width, result.height });
-
-        var font_img_w: c_int = undefined;
-        var font_img_h: c_int = undefined;
-        c.nk_font_atlas_init(&platform.nk_atlas, &platform.nk_alloc);
-        c.nk_font_atlas_begin(&platform.nk_atlas);
-        const ttf = @embedFile("yeet.ttf");
-        const font: *c.nk_font = c.nk_font_atlas_add_from_memory(
-            &platform.nk_atlas,
-            @constCast(ttf.ptr),
-            ttf.len,
-            13,
-            0,
-        ) orelse @panic("");
-        _ = c.nk_font_atlas_bake(&platform.nk_atlas, &font_img_w, &font_img_h, c.NK_FONT_ATLAS_RGBA32) orelse @panic("");
-        std.log.info("theirs: {} {}", .{ font_img_w, font_img_h });
+        const result = try platform.atlas.bake(allocator, .r8g8b8a8_unorm);
+        defer allocator.free(result.pixels);
 
         c.glGenTextures(1, &platform.nk_font_tex);
         errdefer c.glDeleteTextures(1, &platform.nk_font_tex);
@@ -245,9 +232,9 @@ pub const Platform = struct {
         c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_LINEAR);
         c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_LINEAR);
         c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_RGBA, @intCast(result.width), @intCast(result.height), 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, result.pixels.ptr);
-        c.nk_font_atlas_end(&platform.nk_atlas, c.nk_handle_id(@intCast(platform.nk_font_tex)), &platform.nk_tex_null);
+        platform.atlas.end(@ptrFromInt(platform.nk_font_tex), &platform.nk_tex_null);
 
-        _ = c.nk_init(&platform.nk_ctx, &platform.nk_alloc, &font.handle);
+        _ = c.nk_init(&platform.nk_ctx, &platform.nk_alloc, &f.nkuf);
 
         return platform;
     }
@@ -256,7 +243,8 @@ pub const Platform = struct {
         const allocator = platform.allocator;
 
         c.glDeleteTextures(1, &platform.nk_font_tex);
-        c.nk_font_atlas_clear(&platform.nk_atlas);
+        platform.atlas.deinit(platform.allocator);
+        // c.nk_font_atlas_clear(&platform.nk_atlas);
         c.nk_free(&platform.nk_ctx);
         c.nk_buffer_free(&platform.nk_cmd_buffer);
         c.nk_buffer_free(&platform.nk_ebuffer);

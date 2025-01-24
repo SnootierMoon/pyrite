@@ -1,21 +1,3 @@
-// c.nk_font_atlas_init(&platform.nk_atlas, &platform.nk_alloc);
-// c.nk_font_atlas_begin(&platform.nk_atlas);
-// const ttf = @embedFile("yeet.ttf");
-// const font: *c.nk_font = c.nk_font_atlas_add_from_memory(
-//     &platform.nk_atlas,
-//     @constCast(ttf.ptr),
-//     ttf.len,
-//     13,
-//     0,
-// ) orelse @panic("");
-// const font_img_px = c.nk_font_atlas_bake(&platform.nk_atlas, &font_img_w, &font_img_h, c.NK_FONT_ATLAS_RGBA32) orelse @panic("");
-// c.glGenTextures(1, &platform.nk_font_tex);
-// errdefer c.glDeleteTextures(1, &platform.nk_font_tex);
-// c.glBindTexture(c.GL_TEXTURE_2D, platform.nk_font_tex);
-// c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_LINEAR);
-// c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_LINEAR);
-// c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_RGBA, font_img_w, font_img_h, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, font_img_px);
-// c.nk_font_atlas_end(&platform.nk_atlas, c.nk_handle_id(@intCast(platform.nk_font_tex)), &platform.nk_tex_null);
 const c = @import("root").c;
 const std = @import("std");
 
@@ -43,6 +25,7 @@ const UserFont = struct {
     height: f32,
     width_fn: *const fn (?*anyopaque, height: f32, txt: []const u8) f32,
     query_fn: *const fn (?*anyopaque, height: f32, codepoint: u21, next_codepoint: u21) Glyph,
+    texture: ?*anyopaque,
 
     const Glyph = struct {
         uv: [2]Vec2,
@@ -71,6 +54,7 @@ pub const Font = struct {
     fallback_codepoint: u21,
     texture: ?*anyopaque,
     configs: FontConfig.List,
+    nkuf: c.nk_user_font,
 
     const List = std.SegmentedList(Font, 8);
 
@@ -102,6 +86,24 @@ pub const Font = struct {
             }
         }
         return font.fallback;
+    }
+
+    fn widthFnNk(font_ptr: c.nk_handle, h: f32, buf: ?[*]const u8, len: c_int) callconv(.C) f32 {
+        return widthFn(font_ptr.ptr, h, buf.?[0..@intCast(len)]);
+    }
+
+    fn queryFnNk(font_ptr: c.nk_handle, font_height: f32, glyph: ?*c.nk_user_font_glyph, codepoint: c.nk_rune, next_codepoint: c.nk_rune) callconv(.C) void {
+        const gg = queryFn(font_ptr.ptr, font_height, @intCast(codepoint), @intCast(next_codepoint));
+        glyph.?.* = .{
+            .width = gg.width,
+            .height = gg.height,
+            .offset = .{ .x = gg.offset.x, .y = gg.offset.y },
+            .xadvance = gg.xadvance,
+            .uv = .{
+                .{ .x = gg.uv[0].x, .y = gg.uv[0].y },
+                .{ .x = gg.uv[1].x, .y = gg.uv[1].y },
+            },
+        };
     }
 
     fn widthFn(font_ptr: ?*anyopaque, height: f32, txt: []const u8) f32 {
@@ -162,13 +164,14 @@ pub const FontAtlas = struct {
     texture_height: u32,
     custom: Rect,
 
-    // TODO cursor: [NK_CURSOR_COUNT]nk_cursor,
-
     glyphs: []Font.Glyph,
     default_font: ?*Font,
 
     fonts_len: usize,
     fonts: Font.List,
+
+    // TODO
+    // struct nk_cursor cursors[NK_CURSOR_COUNT];
 
     pub const TTFAddInfo = struct {
         ttf: []const u8,
@@ -185,8 +188,9 @@ pub const FontAtlas = struct {
         fallback_codepoint: u21 = '?',
     };
 
-    pub fn init() FontAtlas {
-        return .{
+    pub fn init(gpa: std.mem.Allocator) !*FontAtlas {
+        const atlas = try gpa.create(FontAtlas);
+        atlas.* = .{
             .texture_width = undefined,
             .texture_height = undefined,
             .custom = undefined,
@@ -195,6 +199,7 @@ pub const FontAtlas = struct {
             .fonts_len = 0,
             .fonts = .{},
         };
+        return atlas;
     }
 
     const FontIterator = std.SegmentedList(Font, 8).Iterator;
@@ -236,11 +241,10 @@ pub const FontAtlas = struct {
             font.configs.deinit(gpa);
         }
         atlas.fonts.deinit(gpa);
+        gpa.destroy(atlas);
     }
 
     pub fn addTTF(atlas: *FontAtlas, gpa: std.mem.Allocator, info: TTFAddInfo) !*Font {
-        // this function is modeled after nk_font_atlas_add_from_memory
-
         std.debug.assert(info.height > 0.0);
 
         const font = if (info.merge_mode)
@@ -283,8 +287,6 @@ pub const FontAtlas = struct {
         gpa: std.mem.Allocator,
         format: FontBaker.Format,
     ) !Result {
-        // this function is modeled after nk_font_atlas_bake
-
         std.debug.assert(atlas.fonts_len > 0);
 
         var arena: std.heap.ArenaAllocator = .init(gpa);
@@ -353,15 +355,21 @@ pub const FontAtlas = struct {
         var font_it = atlas.fontIterator();
         while (font_it.next()) |font| {
             const config = font.configs.at(0);
+            const scale = config.height / font.baked_font.height;
             font.user_font.user_ptr = font;
-            font.user_font.height = font.baked_font.height * font.scale;
+            font.user_font.height = font.baked_font.height * scale;
             font.user_font.width_fn = Font.widthFn;
             font.user_font.query_fn = Font.queryFn;
-            font.scale = config.height / font.baked_font.height;
+            font.nkuf = .{
+                .userdata = .{ .ptr = font },
+                .height = font.baked_font.height * scale,
+                .width = Font.widthFnNk,
+                .query = Font.queryFnNk,
+            };
+            font.scale = scale;
             font.glyphs = atlas.glyphs[font.baked_font.glyph_offset..][0..font.baked_font.glyph_count];
             font.fallback_codepoint = config.fallback_codepoint;
             font.fallback = font.findGlyph(font.fallback_codepoint);
-            font.texture = atlas;
         }
 
         return .{
@@ -369,6 +377,20 @@ pub const FontAtlas = struct {
             .width = baker.width,
             .height = baker.height,
         };
+    }
+
+    pub fn end(atlas: *FontAtlas, texture: ?*anyopaque, tex_null: ?*c.nk_draw_null_texture) void {
+        if (tex_null) |t| {
+            t.texture = c.nk_handle_ptr(texture);
+            t.uv.x = (@as(f32, @floatFromInt(atlas.custom.x)) + 0.5) / @as(f32, @floatFromInt(atlas.texture_width));
+            t.uv.y = (@as(f32, @floatFromInt(atlas.custom.y)) + 0.5) / @as(f32, @floatFromInt(atlas.texture_width));
+        }
+        var font_it = atlas.fontIterator();
+        while (font_it.next()) |font| {
+            font.texture = texture;
+            font.user_font.texture = texture;
+            font.nkuf.texture = c.nk_handle_ptr(texture);
+        }
     }
 };
 
