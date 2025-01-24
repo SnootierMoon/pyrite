@@ -183,6 +183,8 @@ const CDeps = struct {
         } };
         _ = nk_files.addCopyFile(b.path("src/nk.h"), "include/nk.h");
         _ = nk_files.addCopyFile(nk_dep.path("nuklear.h"), "include/nuklear.h");
+        _ = nk_files.addCopyFile(nk_dep.path("src/stb_truetype.h"), "include/stb_truetype.h");
+        _ = nk_files.addCopyFile(nk_dep.path("src/stb_rect_pack.h"), "include/stb_rect_pack.h");
         nk_lib.addCSourceFile(.{ .file = nk_files.add("src/nk.c", "#define NK_IMPLEMENTATION\n#include \"nk.h\"") });
         nk_lib.addIncludePath(nk_headers);
         nk_lib.installHeadersDirectory(nk_headers, ".", .{});
