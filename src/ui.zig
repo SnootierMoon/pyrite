@@ -383,7 +383,7 @@ pub const FontAtlas = struct {
         if (tex_null) |t| {
             t.texture = c.nk_handle_ptr(texture);
             t.uv.x = (@as(f32, @floatFromInt(atlas.custom.x)) + 0.5) / @as(f32, @floatFromInt(atlas.texture_width));
-            t.uv.y = (@as(f32, @floatFromInt(atlas.custom.y)) + 0.5) / @as(f32, @floatFromInt(atlas.texture_width));
+            t.uv.y = (@as(f32, @floatFromInt(atlas.custom.y)) + 0.5) / @as(f32, @floatFromInt(atlas.texture_height));
         }
         var font_it = atlas.fontIterator();
         while (font_it.next()) |font| {
@@ -447,7 +447,7 @@ const FontBaker = struct {
             ) == 0) {
                 return error.Stbtt;
             }
-            baker.fonts[index].info.userdata = @import("root").AAA;
+            baker.fonts[index].info.userdata = baker;
         }
 
         return baker;
@@ -466,7 +466,7 @@ const FontBaker = struct {
             max_height,
             0,
             1,
-            @import("root").AAA,
+            baker,
         ) == 0) {
             return error.Stbtt;
         }
@@ -689,3 +689,13 @@ const cursor_data: [cursor_data_height * cursor_data_width]u8 =
     "                                                      -  X..X           X..X  -           " ++
     "                                                      -   X.X           X.X   -           " ++
     "                                                      -    XX           XX    -           ").*;
+
+export fn zig_stbtt_malloc(size: usize, user_data: ?*anyopaque) ?[*]u8 {
+    const baker: *FontBaker = @alignCast(@ptrCast(user_data));
+    const buf = baker.arena.alignedAlloc(u8, 16, size) catch return null;
+    return buf.ptr;
+}
+
+export fn zig_stbtt_free(ptr: ?*anyopaque, user_data: ?*anyopaque) void {
+    _ = .{ ptr, user_data };
+}
