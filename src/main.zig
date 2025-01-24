@@ -28,7 +28,6 @@ const NkVertex = extern struct {
     uv: [2]f32,
     col: [4]u8,
 };
-pub var AAA: *c.nk_allocator = undefined;
 
 var value: f32 = 0.5;
 pub const Platform = struct {
@@ -70,6 +69,10 @@ pub const Platform = struct {
     nk_ebuffer: c.nk_buffer,
     nk_cmd_buffer: c.nk_buffer,
 
+    ui_state_radius: f32,
+    ui_state_range: f32,
+    ui_state_selected: c_int,
+
     const Mesh = struct {
         vao: c.GLuint,
         vbo: c.GLuint,
@@ -98,8 +101,6 @@ pub const Platform = struct {
             .user = platform,
         };
 
-        platform.fb_width = options.width;
-        platform.fb_height = options.height;
         _ = c.glfwSetErrorCallback(errorCallback);
         c.glfwInitAllocator(&glfw_allocator);
         if (c.glfwInit() == c.GLFW_FALSE) {
@@ -116,6 +117,7 @@ pub const Platform = struct {
             return error.GlfwCreateWindow;
         };
         errdefer c.glfwDestroyWindow(platform.window);
+        c.glfwGetWindowSize(platform.window, &platform.fb_width, &platform.fb_height);
 
         c.glfwSetWindowUserPointer(platform.window, platform);
         _ = c.glfwSetWindowFocusCallback(platform.window, windowFocusCallback);
@@ -140,7 +142,7 @@ pub const Platform = struct {
             c.glDebugMessageControl(c.GL_DONT_CARE, c.GL_DONT_CARE, c.GL_DONT_CARE, 0, null, c.GL_TRUE);
         }
 
-        c.glViewport(0, 0, options.width, options.height);
+        c.glViewport(0, 0, platform.fb_width, platform.fb_height);
 
         platform.camera = Camera.init(lm.Vec3F{ -20.0, 0.0, 0.0 }, 0.0, 0.0);
         platform.object = Object.init();
@@ -178,10 +180,9 @@ pub const Platform = struct {
         errdefer c.glDeleteProgram(platform.crosshair_prog);
         c.glUseProgram(platform.crosshair_prog);
         platform.crosshair_prog_frame_size = c.glGetUniformLocation(platform.crosshair_prog, "frame_size");
-        c.glUniform2f(platform.crosshair_prog_frame_size, @floatFromInt(options.width), @floatFromInt(options.height));
+        c.glUniform2f(platform.crosshair_prog_frame_size, @floatFromInt(platform.fb_width), @floatFromInt(platform.fb_height));
 
         platform.nk_alloc = platform.nkAllocator();
-        AAA = &platform.nk_alloc;
 
         platform.ui_prog = try makeProgram(
             @embedFile("shaders/nuklear_vert.glsl"),
@@ -234,6 +235,9 @@ pub const Platform = struct {
         c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_RGBA, @intCast(result.width), @intCast(result.height), 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, result.pixels.ptr);
         platform.atlas.end(@ptrFromInt(platform.ui_font_tex), &platform.nk_tex_null);
 
+        platform.ui_state_radius = 5.0;
+        platform.ui_state_range = 25.0;
+        platform.ui_state_selected = 0;
         _ = c.nk_init(&platform.nk_ctx, &platform.nk_alloc, &f.nkuf);
 
         return platform;
@@ -278,7 +282,40 @@ pub const Platform = struct {
         c.nk_input_end(&platform.nk_ctx);
 
         c.nk_style_show_cursor(&platform.nk_ctx);
-        if (c.nk_begin(&platform.nk_ctx, "Show", c.nk_rect(50, 50, 220, 220), c.NK_WINDOW_BORDER | c.NK_WINDOW_MOVABLE | c.NK_WINDOW_CLOSABLE)) {}
+        if (c.nk_begin(&platform.nk_ctx, "Show", c.nk_rect(640, 400, 220, 220), c.NK_WINDOW_BORDER | c.NK_WINDOW_MOVABLE | c.NK_WINDOW_CLOSABLE)) {
+            c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
+            {
+                const msg = if (platform.object.rayMarchNonAir(platform.camera.pos, platform.camera.forward(), 50)) |hit|
+                    try std.fmt.allocPrintZ(platform.allocator, "Looking at: {},{},{}", .{ hit.vec[0], hit.vec[1], hit.vec[2] })
+                else
+                    try std.fmt.allocPrintZ(platform.allocator, "Looking at: None", .{});
+                defer platform.allocator.free(msg);
+                c.nk_label(&platform.nk_ctx, msg, c.NK_TEXT_LEFT);
+            }
+            c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
+            {
+                const msg = try std.fmt.allocPrintZ(platform.allocator, "Facing: {s}", .{switch (Dir.fromVec(platform.camera.forward()) orelse unreachable) {
+                    .pos_x => "positive x",
+                    .pos_y => "positive y",
+                    .pos_z => "positive z",
+                    .neg_x => "negative x",
+                    .neg_y => "negative y",
+                    .neg_z => "negative z",
+                }});
+                defer platform.allocator.free(msg);
+                c.nk_label(&platform.nk_ctx, msg, c.NK_TEXT_LEFT);
+            }
+
+            c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
+            c.nk_property_float(&platform.nk_ctx, "distance", 0, &platform.ui_state_range, 50, 1, 0.3);
+
+            c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
+            c.nk_property_float(&platform.nk_ctx, "radius", 0, &platform.ui_state_radius, 10, 1, 0.3);
+
+            c.nk_layout_row_dynamic(&platform.nk_ctx, 30, 1);
+            var items = [2]?[*:0]const u8{ "air", "block" };
+            c.nk_combobox(&platform.nk_ctx, @ptrCast(&items), 2, &platform.ui_state_selected, 30, c.nk_vec2(100, 60));
+        }
         c.nk_end(&platform.nk_ctx);
 
         switch (platform.input_mode) {
@@ -544,6 +581,7 @@ pub const Platform = struct {
             .cursor_input => {
                 if (button == c.GLFW_MOUSE_BUTTON_LEFT and action == c.GLFW_PRESS and !c.nk_window_is_any_hovered(&platform.nk_ctx)) {
                     platform.setInputMode(.camera_input);
+                    std.log.info("{d} {d}", .{ platform.cursor_pos.?[0], platform.cursor_pos.?[1] });
                 } else {
                     const nk_button: ?c.nk_buttons = switch (button) {
                         c.GLFW_MOUSE_BUTTON_LEFT => c.NK_BUTTON_LEFT,
@@ -552,6 +590,7 @@ pub const Platform = struct {
                         // => c.NK_BUTTON_DOUBLE,
                         else => null,
                     };
+                    std.log.info("{d} {d}", .{ platform.cursor_pos.?[0], platform.cursor_pos.?[1] });
                     if (nk_button) |b| {
                         if (platform.cursor_pos) |pos| {
                             c.nk_input_button(&platform.nk_ctx, @intCast(b), @intFromFloat(pos[0]), @intFromFloat(pos[1]), action == c.GLFW_PRESS);

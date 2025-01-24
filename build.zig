@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
         bool,
         "x11",
         "Enable X11 support when building for Linux",
-    ) orelse false;
+    ) orelse true;
 
     const glfw_mode = b.option(
         GlfwLinkMode,
