@@ -57,15 +57,15 @@ pub const Platform = struct {
     nk_alloc: c.nk_allocator,
     nk_ctx: c.nk_context,
     nk_tex_null: c.nk_draw_null_texture,
-    nk_font_tex: c.GLuint,
+    ui_font_tex: c.GLuint,
 
-    nk_prog: c.GLuint,
-    nk_prog_tex: c.GLint,
-    nk_prog_transform: c.GLint,
+    ui_prog: c.GLuint,
+    ui_prog_tex: c.GLint,
+    ui_prog_transform: c.GLint,
 
-    nk_vao: c.GLuint,
-    nk_vbo: c.GLuint,
-    nk_ebo: c.GLuint,
+    ui_vao: c.GLuint,
+    ui_vbo: c.GLuint,
+    ui_ebo: c.GLuint,
     nk_vbuffer: c.nk_buffer,
     nk_ebuffer: c.nk_buffer,
     nk_cmd_buffer: c.nk_buffer,
@@ -157,8 +157,8 @@ pub const Platform = struct {
         errdefer platform.cleanupMeshes();
 
         var it = platform.object.chunks.keyIterator();
-        while (it.next()) |chunk_coord| {
-            try platform.updateMesh(chunk_coord.*);
+        while (it.next()) |ccoord| {
+            try platform.updateMesh(ccoord.*);
         }
 
         platform.input_mode = .cursor_input;
@@ -183,24 +183,24 @@ pub const Platform = struct {
         platform.nk_alloc = platform.nkAllocator();
         AAA = &platform.nk_alloc;
 
-        platform.nk_prog = try makeProgram(
+        platform.ui_prog = try makeProgram(
             @embedFile("shaders/nuklear_vert.glsl"),
             @embedFile("shaders/nuklear_frag.glsl"),
         );
-        errdefer c.glDeleteProgram(platform.nk_prog);
-        platform.nk_prog_tex = c.glGetUniformLocation(platform.nk_prog, "tex");
-        platform.nk_prog_transform = c.glGetUniformLocation(platform.nk_prog, "transform");
+        errdefer c.glDeleteProgram(platform.ui_prog);
+        platform.ui_prog_tex = c.glGetUniformLocation(platform.ui_prog, "tex");
+        platform.ui_prog_transform = c.glGetUniformLocation(platform.ui_prog, "transform");
 
-        c.glGenVertexArrays(1, &platform.nk_vao);
-        errdefer c.glDeleteVertexArrays(1, &platform.nk_vao);
-        c.glGenBuffers(1, &platform.nk_vbo);
-        errdefer c.glDeleteBuffers(1, &platform.nk_vbo);
-        c.glGenBuffers(1, &platform.nk_ebo);
-        errdefer c.glDeleteBuffers(1, &platform.nk_ebo);
+        c.glGenVertexArrays(1, &platform.ui_vao);
+        errdefer c.glDeleteVertexArrays(1, &platform.ui_vao);
+        c.glGenBuffers(1, &platform.ui_vbo);
+        errdefer c.glDeleteBuffers(1, &platform.ui_vbo);
+        c.glGenBuffers(1, &platform.ui_ebo);
+        errdefer c.glDeleteBuffers(1, &platform.ui_ebo);
 
-        c.glBindVertexArray(platform.nk_vao);
-        c.glBindBuffer(c.GL_ARRAY_BUFFER, platform.nk_vbo);
-        c.glBindBuffer(c.GL_ELEMENT_ARRAY_BUFFER, platform.nk_ebo);
+        c.glBindVertexArray(platform.ui_vao);
+        c.glBindBuffer(c.GL_ARRAY_BUFFER, platform.ui_vbo);
+        c.glBindBuffer(c.GL_ELEMENT_ARRAY_BUFFER, platform.ui_ebo);
 
         c.nk_buffer_init(&platform.nk_vbuffer, &platform.nk_alloc, 4096);
         errdefer c.nk_buffer_free(&platform.nk_vbuffer);
@@ -226,13 +226,13 @@ pub const Platform = struct {
         const result = try platform.atlas.bake(allocator, .r8g8b8a8_unorm);
         defer allocator.free(result.pixels);
 
-        c.glGenTextures(1, &platform.nk_font_tex);
-        errdefer c.glDeleteTextures(1, &platform.nk_font_tex);
-        c.glBindTexture(c.GL_TEXTURE_2D, platform.nk_font_tex);
+        c.glGenTextures(1, &platform.ui_font_tex);
+        errdefer c.glDeleteTextures(1, &platform.ui_font_tex);
+        c.glBindTexture(c.GL_TEXTURE_2D, platform.ui_font_tex);
         c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_LINEAR);
         c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_LINEAR);
         c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_RGBA, @intCast(result.width), @intCast(result.height), 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, result.pixels.ptr);
-        platform.atlas.end(@ptrFromInt(platform.nk_font_tex), &platform.nk_tex_null);
+        platform.atlas.end(@ptrFromInt(platform.ui_font_tex), &platform.nk_tex_null);
 
         _ = c.nk_init(&platform.nk_ctx, &platform.nk_alloc, &f.nkuf);
 
@@ -242,17 +242,17 @@ pub const Platform = struct {
     pub fn deinit(platform: *Platform) void {
         const allocator = platform.allocator;
 
-        c.glDeleteTextures(1, &platform.nk_font_tex);
+        c.glDeleteTextures(1, &platform.ui_font_tex);
         platform.atlas.deinit(platform.allocator);
         // c.nk_font_atlas_clear(&platform.nk_atlas);
         c.nk_free(&platform.nk_ctx);
         c.nk_buffer_free(&platform.nk_cmd_buffer);
         c.nk_buffer_free(&platform.nk_ebuffer);
         c.nk_buffer_free(&platform.nk_vbuffer);
-        c.glDeleteBuffers(1, &platform.nk_ebo);
-        c.glDeleteBuffers(1, &platform.nk_vbo);
-        c.glDeleteVertexArrays(1, &platform.nk_vao);
-        c.glDeleteProgram(platform.nk_prog);
+        c.glDeleteBuffers(1, &platform.ui_ebo);
+        c.glDeleteBuffers(1, &platform.ui_vbo);
+        c.glDeleteVertexArrays(1, &platform.ui_vao);
+        c.glDeleteProgram(platform.ui_prog);
         c.glDeleteProgram(platform.crosshair_prog);
         c.glDeleteProgram(platform.voxel_prog);
         platform.cleanupMeshes();
@@ -362,13 +362,13 @@ pub const Platform = struct {
         c.glEnable(c.GL_SCISSOR_TEST);
         c.glActiveTexture(c.GL_TEXTURE0);
 
-        c.glUseProgram(platform.nk_prog);
-        c.glUniform1i(platform.nk_prog_tex, 0);
-        c.glUniformMatrix4fv(platform.nk_prog_transform, 1, c.GL_TRUE, &lm.mat4f.rowMajorArray(ortho));
+        c.glUseProgram(platform.ui_prog);
+        c.glUniform1i(platform.ui_prog_tex, 0);
+        c.glUniformMatrix4fv(platform.ui_prog_transform, 1, c.GL_TRUE, &lm.mat4f.rowMajorArray(ortho));
 
-        c.glBindVertexArray(platform.nk_vao);
-        c.glBindBuffer(c.GL_ARRAY_BUFFER, platform.nk_vbo);
-        c.glBindBuffer(c.GL_ELEMENT_ARRAY_BUFFER, platform.nk_ebo);
+        c.glBindVertexArray(platform.ui_vao);
+        c.glBindBuffer(c.GL_ARRAY_BUFFER, platform.ui_vbo);
+        c.glBindBuffer(c.GL_ELEMENT_ARRAY_BUFFER, platform.ui_ebo);
 
         c.nk_buffer_clear(&platform.nk_vbuffer);
         c.nk_buffer_clear(&platform.nk_ebuffer);
@@ -395,9 +395,9 @@ pub const Platform = struct {
         c.glfwSwapBuffers(platform.window);
     }
 
-    fn updateMesh(platform: *Platform, chunk_coord: ChunkCoord) !void {
+    fn updateMesh(platform: *Platform, ccoord: ChunkCoord) !void {
         const allocator = platform.allocator;
-        if (platform.meshes.fetchRemove(chunk_coord)) |kv| {
+        if (platform.meshes.fetchRemove(ccoord)) |kv| {
             c.glDeleteBuffers(1, &kv.value.vbo);
             c.glDeleteVertexArrays(1, &kv.value.vao);
         }
@@ -405,7 +405,7 @@ pub const Platform = struct {
         var buffer = std.ArrayList(u32).init(allocator);
         defer buffer.deinit();
 
-        if (try platform.object.generateMesh(chunk_coord, &buffer)) {
+        if (try platform.object.generateMesh(ccoord, &buffer)) {
             var vao: c.GLuint = undefined;
             var vbo: c.GLuint = undefined;
 
@@ -420,7 +420,7 @@ pub const Platform = struct {
             c.glVertexAttribDivisor(0, 1);
             c.glBufferData(c.GL_ARRAY_BUFFER, @intCast(buffer.items.len * @sizeOf(u32)), buffer.items.ptr, c.GL_STATIC_DRAW);
 
-            try platform.meshes.put(allocator, chunk_coord, .{
+            try platform.meshes.put(allocator, ccoord, .{
                 .vao = vao,
                 .vbo = vbo,
                 .count = buffer.items.len,
@@ -568,8 +568,8 @@ pub const Platform = struct {
                             (platform.object.getPtr(platform.allocator, posn) catch @panic("")).* = @enumFromInt(@as(u32, @intCast(0)));
                         }
                         var it = platform.object.chunks.keyIterator();
-                        while (it.next()) |chunk_coord| {
-                            platform.updateMesh(chunk_coord.*) catch @panic("");
+                        while (it.next()) |ccoord| {
+                            platform.updateMesh(ccoord.*) catch @panic("");
                         }
                     }
                 }
